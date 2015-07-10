@@ -3477,23 +3477,27 @@ void main(int argc, char **argv)
 	MEM32_IMAGE *mem_image;
 	ELF_FILE *elf_file;
 
-	c = getopt_long(argc, argv, "", long_options, &long_index);
+	for (;;) {
 
-	switch (c) {
-
-		case 'h':
-
-			printf("mips-ioe5 [options] elf-file\n");
-			printf("options:\n");
-			printf("    --help                Print help menu\n");
-			printf("    --display-pipeline    Display pipeline status for each cycle\n");
+		if ((c = getopt_long(argc, argv, "", long_options, &long_index)) < 0)
 			break;
 
-		case 'd':
+		switch (c) {
 
-			display_pipe_flag = 1;
-			printf("display_pipe_flag: %d\n", display_pipe_flag);
-			break;
+			case 'h':
+
+				printf("mips-ioe5 [options] elf-file\n");
+				printf("options:\n");
+				printf("    --help                Print help menu\n");
+				printf("    --display-pipeline    Display pipeline status for each cycle\n");
+				break;
+
+			case 'd':
+
+				display_pipe_flag = 1;
+				printf("display_pipe_flag: %d\n", display_pipe_flag);
+				break;
+		}
 	}
 
 	addr = 0;
@@ -3502,9 +3506,13 @@ void main(int argc, char **argv)
 
 	m4k_init(&cpu_state, mem_image, addr);
 
-	elf_file = elf32_fopen("dhry-mips");
+	printf("loading %s\n", argv[optind]);
+
+	elf_file = elf32_fopen(argv[optind]);
 
 	elf32_load(elf_file, mem_image);
+
+	printf("executing %s\n", argv[optind]);
 
 	m4k_execute(&cpu_state, 100000);
 }
