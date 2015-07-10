@@ -74,11 +74,13 @@
 ** Only big-endian configuration currently supported.
 */
 
+#include <getopt.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "../elf/mem.h"
 #include "../elf/elf32.h"
@@ -376,7 +378,7 @@ typedef struct {
 
 } CPU_STATE;
 
-int debug_flag = 0;
+int display_pipe_flag = 0;
 
 int debug_address = 0x45a8;
 
@@ -391,7 +393,7 @@ void bypass_clear(BYPASS_STATE *bypass)
 {
 	bypass->valid_flag = 0;
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  bypass %s cleared\n", bypass->name);
 }
 
@@ -401,12 +403,12 @@ int bypass_check(BYPASS_STATE *bypass, int reg_num, uint32_t *value)
 
 		*value = bypass->value;
 
-		if (debug_flag)
+		if (display_pipe_flag)
 			printf("  bypass %s: $%d found, value: 0x%08x\n", bypass->name, reg_num, *value);
 		return 1;
 	}
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  bypass %s: reg $%d not found\n", bypass->name, reg_num);
 
 	return 0;
@@ -421,11 +423,11 @@ void bypass_update(BYPASS_STATE *bypass, WB_INFO *wb)
 		bypass->reg_num = wb->reg_num;
 		bypass->value   = wb->value;
 
-		if (debug_flag)
+		if (display_pipe_flag)
 			printf("  bypass %s: wrote reg $%d, value: 0x%08x\n", bypass->name, wb->reg_num, wb->value);
 
 	} else 
-		if (debug_flag)
+		if (display_pipe_flag)
 			printf("  bypass %s cleared\n", bypass->name);
 }
 
@@ -446,7 +448,7 @@ uint32_t mem32_read_byte(MEM32_IMAGE *mem_image, uint32_t address)
 
 	value = data[offset];
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  Read memory 0x%x (0x%02x)\n", address, value);
 
 	return value;
@@ -476,7 +478,7 @@ uint32_t mem32_read_halfword(MEM32_IMAGE *mem_image, uint32_t address)
 		value |= data[offset] << 8;
 	}
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  Read memory 0x%x (0x%04x)\n", address, value);
 
 	return value;
@@ -510,7 +512,7 @@ uint32_t mem32_read_word(MEM32_IMAGE *mem_image, uint32_t address)
 		value |= data[offset] << 24;
 	}
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  Read memory 0x%x (0x%08x)\n", address, value);
 
 	return value;
@@ -528,7 +530,7 @@ void mem32_write_byte(MEM32_IMAGE *mem_image, uint32_t address, uint8_t value)
 
 	data[offset] = value;
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  Wrote memory 0x%x (0x%02x)\n", address, value & 0xff);
 }
 
@@ -555,7 +557,7 @@ void mem32_write_halfword(MEM32_IMAGE *mem_image, uint32_t address, uint16_t val
 		data[offset + 1] = value >> 8;
 	}
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  Wrote memory 0x%x (0x%04x)\n", address, value & 0xffff);
 }
 
@@ -586,10 +588,10 @@ void mem32_write_word(MEM32_IMAGE *mem_image, uint32_t address, uint32_t value)
 		data[offset + 3] = value >> 24;
 	}
 
-	if (debug_flag && (debug_address == address))
+	if (display_pipe_flag && (debug_address == address))
 		printf("   *** DEBUG: wrote to address 0x%08x (0x%08x)\n", address, value);
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  Wrote memory 0x%x (0x%08x)\n", address, value);
 }
 
@@ -615,7 +617,7 @@ void mem32_write_block(MEM32_IMAGE *mem_image, uint32_t address, uint32_t size, 
 
 	offset = address - mem_image->address;
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  Wrote memory block 0x%08x - 0x%08x\n", address, address + size - 1);
 
 	memcpy(mem_image->data + offset, buffer, size);
@@ -673,7 +675,7 @@ int reg_read(CPU_STATE *cpu_state, uint32_t reg_num, uint32_t *value)
 
 	*value = reg->value;
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  Read $%d (0x%08x)\n", reg_num, *value);
 
 	return reg->valid_flag;
@@ -689,7 +691,7 @@ void reg_write(CPU_STATE *cpu_state, uint32_t reg_num, uint32_t value)
 	if (!reg_num)		/* r0 is always zero */
 		return;
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  Wrote $%d (0x%08x)\n", reg_num, value);
 
 	reg = &cpu_state->general_reg[reg_num];
@@ -709,7 +711,7 @@ void reg_clear_valid_flag(CPU_STATE *cpu_state, uint32_t reg_num)
 
 	reg->valid_flag = 0;
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  Cleared valid bit on $%d\n", reg_num);
 }
 
@@ -721,7 +723,7 @@ void m4k_delayed_jump(CPU_STATE *cpu_state, uint32_t value)
 {
 	cpu_state->next_pc = value;
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  PC set to 0x%08x\n", value);
 }
 
@@ -730,7 +732,7 @@ void  I_stage(CPU_STATE *cpu_state)
 	uint32_t opcode;
 	I_E_LATCH *output = &cpu_state->I_E_latch;
 
-	if (debug_flag) {
+	if (display_pipe_flag) {
 		printf("I stage:\n");
 		printf("  PC: 0x%08x, next_PC: 0x%08x\n", cpu_state->pc, cpu_state->next_pc);
 	}
@@ -913,7 +915,7 @@ void E_stage(CPU_STATE *cpu_state)
 	int rs_valid_flag, rt_valid_flag, hi_valid_flag, lo_valid_flag;
 	char buffer[80];
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("E stage:\n");
 
 	MIPS_disasm(input->opcode.address, opcode, buffer);
@@ -2211,34 +2213,34 @@ void E_stage(CPU_STATE *cpu_state)
 	return;
 
 E_stage_stall:
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  *** stalled - downstream stage busy\n");
 
 	return;
 
 rs_invalid_stall:
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  *** RAW hazard - r%d not valid\n", rs_reg_num);
 
 	E_M_output->opcode.address = E_M_output->opcode.value = E_M_output->opcode.valid_flag = 0;
 	return;
 
 rt_invalid_stall:
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  *** RAW hazard - r%d not valid\n", rt_reg_num);
 
 	E_M_output->opcode.address = E_M_output->opcode.value = E_M_output->opcode.valid_flag = 0;
 	return;
 
 hi_invalid_stall:
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  *** RAW hazard - hi not valid\n");
 
 	E_M_output->opcode.address = E_M_output->opcode.value = E_M_output->opcode.valid_flag = 0;
 	return;
 
 lo_invalid_stall:
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("  *** RAW hazard - lo not valid\n");
 
 	E_M_output->opcode.address = E_M_output->opcode.value = E_M_output->opcode.valid_flag = 0;
@@ -2252,7 +2254,7 @@ void MDU_stage(CPU_STATE *cpu_state)
 	uint32_t temp32;
 	uint64_t temp64;
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("MDU stage:\n");
 
 	/* Check if the A stage has consumed our output. If not, then stall for a clock. */
@@ -2279,7 +2281,7 @@ void MDU_stage(CPU_STATE *cpu_state)
 			else
 				cpu_state->div_counter = 34;
 
-			if (debug_flag)
+			if (display_pipe_flag)
 				printf("  Starting DIV, %d cycles left\n", cpu_state->div_counter);
 
 			input->alu.op = ALU_OP_DIV_CALC;
@@ -2289,7 +2291,7 @@ void MDU_stage(CPU_STATE *cpu_state)
 
 		case ALU_OP_DIV_CALC:
 
-			if (debug_flag)
+			if (display_pipe_flag)
 				printf("  DIV in progress, %d cycles left\n", cpu_state->div_counter - 1);
 
 			if (--cpu_state->div_counter)
@@ -2319,7 +2321,7 @@ void MDU_stage(CPU_STATE *cpu_state)
 			else
 				cpu_state->div_counter = 33;
 
-			if (debug_flag)
+			if (display_pipe_flag)
 				printf("  Starting DIVU, %d cycles left\n", cpu_state->div_counter);
 
 			input->alu.op = ALU_OP_DIVU_CALC;
@@ -2329,7 +2331,7 @@ void MDU_stage(CPU_STATE *cpu_state)
 
 		case ALU_OP_DIVU_CALC:
 
-			if (debug_flag)
+			if (display_pipe_flag)
 				printf("  DIVU in progress, %d cycles left\n", cpu_state->div_counter - 1);
 
 			if (--cpu_state->div_counter)
@@ -2402,7 +2404,7 @@ void  M_stage(CPU_STATE *cpu_state)
 	uint32_t value, address;
 	MEM32_IMAGE *mem_image;
 
-	if (debug_flag) {
+	if (display_pipe_flag) {
 		printf("M stage:\n");
 		printf("  ALU op: %d (%s)\n", input->alu.op, alu_op_name[input->alu.op]);
 		printf("  mem op: %d (%s)\n", input->mem.op, mem_op_name[input->mem.op]);
@@ -2410,7 +2412,7 @@ void  M_stage(CPU_STATE *cpu_state)
 
 	if (output->opcode.valid_flag) {
 
-		if (debug_flag)
+		if (display_pipe_flag)
 			printf("  *** STALLED\n");
 
 		return;
@@ -2700,12 +2702,12 @@ void A_stage(CPU_STATE *cpu_state)
 	A_W_LATCH *output = &cpu_state->A_W_latch;
 	int bit_alignment, shifts, mask;
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("A stage:\n");
 
 	if (output->opcode.valid_flag) {
 
-		if (debug_flag)
+		if (display_pipe_flag)
 			printf("  *** STALLED\n");
 
 		return;
@@ -2763,7 +2765,7 @@ void W_stage(CPU_STATE *cpu_state)
 {
 	A_W_LATCH *input = &cpu_state->A_W_latch;
 
-	if (debug_flag)
+	if (display_pipe_flag)
 		printf("W stage:\n");
 
 	input->opcode.valid_flag = 0;
@@ -2780,7 +2782,7 @@ void W_stage(CPU_STATE *cpu_state)
 
 		case WB_OP_WRITE_HI:
 
-			if (debug_flag)
+			if (display_pipe_flag)
 				printf("  wrote hi=0x%x\n", input->wb.value);
 
 			cpu_state->hi.value = input->wb.value;
@@ -2789,7 +2791,7 @@ void W_stage(CPU_STATE *cpu_state)
 
 		case WB_OP_WRITE_LO:
 
-			if (debug_flag)
+			if (display_pipe_flag)
 				printf("  wrote lo=0x%x\n", input->wb.value);
 
 			cpu_state->lo.value = input->wb.value;
@@ -2798,7 +2800,7 @@ void W_stage(CPU_STATE *cpu_state)
 
 		case WB_OP_WRITE_HI_LO:
 
-			if (debug_flag)
+			if (display_pipe_flag)
 				printf("  wrote hi=0x%x, lo=0x%x\n", input->wb.hi_value, input->wb.value);
 
 			cpu_state->hi.value = input->wb.hi_value;
@@ -3397,7 +3399,7 @@ void m4k_execute(CPU_STATE *cpu_state, int clocks_num)
 
 	for (i=0; i<clocks_num; i++) {
 
-		if (debug_flag) {
+		if (display_pipe_flag) {
 
 			printf("---------- Clock %d pipeline state ----------\n", cpu_state->cycle_num);
 
@@ -3458,12 +3460,41 @@ void m4k_execute(CPU_STATE *cpu_state, int clocks_num)
 
 #endif
 
-void main(void)
+int option_index = 0;
+
+static struct option long_options[] = {
+	{"help",         no_argument, 0,  'h'},
+	{"debug",        no_argument, 0,  'd'},
+	{"display-pipe", no_argument, 0,  'd'},
+	{0,              0,           0,  0}
+};
+
+void main(int argc, char **argv)
 {
 	uint32_t addr;
+	int c, long_index;
 	CPU_STATE cpu_state;
 	MEM32_IMAGE *mem_image;
 	ELF_FILE *elf_file;
+
+	c = getopt_long(argc, argv, "", long_options, &long_index);
+
+	switch (c) {
+
+		case 'h':
+
+			printf("mips-ioe5 [options] elf-file\n");
+			printf("options:\n");
+			printf("    --help                Print help menu\n");
+			printf("    --display-pipeline    Display pipeline status for each cycle\n");
+			break;
+
+		case 'd':
+
+			display_pipe_flag = 1;
+			printf("display_pipe_flag: %d\n", display_pipe_flag);
+			break;
+	}
 
 	addr = 0;
 
